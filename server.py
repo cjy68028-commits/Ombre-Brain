@@ -123,13 +123,11 @@ mcp = FastMCP(
 # =============================================================
 _sessions: dict[str, float] = {}  # {token: expiry_timestamp}
 
-
 def _get_sessions_file() -> str:
     return os.path.join(config["buckets_dir"], ".dashboard_sessions.json")
 
 
 def _load_sessions() -> None:
-    """Load persisted sessions from disk; expired tokens are silently dropped."""
     global _sessions
     sessions_file = _get_sessions_file()
     if not os.path.exists(sessions_file):
@@ -144,7 +142,6 @@ def _load_sessions() -> None:
 
 
 def _save_sessions() -> None:
-    """Persist current sessions to disk so they survive restarts."""
     sessions_file = _get_sessions_file()
     try:
         os.makedirs(os.path.dirname(sessions_file), exist_ok=True)
@@ -155,6 +152,7 @@ def _save_sessions() -> None:
 
 
 _load_sessions()
+
 
 
 def _get_auth_file() -> str:
