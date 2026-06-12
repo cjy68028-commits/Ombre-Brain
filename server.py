@@ -124,6 +124,39 @@ mcp = FastMCP(
 _sessions: dict[str, float] = {}  # {token: expiry_timestamp}
 
 
+def _get_sessions_file() -> str:
+    return os.path.join(config["buckets_dir"], ".dashboard_sessions.json")
+
+
+def _load_sessions() -> None:
+    """Load persisted sessions from disk; expired tokens are silently dropped."""
+    global _sessions
+    sessions_file = _get_sessions_file()
+    if not os.path.exists(sessions_file):
+        return
+    try:
+        with open(sessions_file, "r", encoding="utf-8") as f:
+            data = _json_lib.load(f)
+        now = time.time()
+        _sessions = {k: v for k, v in data.items() if isinstance(v, (int, float)) and v > now}
+    except Exception:
+        _sessions = {}
+
+
+def _save_sessions() -> None:
+    """Persist current sessions to disk so they survive restarts."""
+    sessions_file = _get_sessions_file()
+    try:
+        os.makedirs(os.path.dirname(sessions_file), exist_ok=True)
+        with open(sessions_file, "w", encoding="utf-8") as f:
+            _json_lib.dump(_sessions, f)
+    except Exception as e:
+        logger.warning(f"Failed to save sessions: {e}")
+
+
+_load_sessions()
+
+
 def _get_auth_file() -> str:
     return os.path.join(config["buckets_dir"], ".dashboard_auth.json")
 
@@ -178,6 +211,7 @@ def _verify_any_password(password: str) -> bool:
 def _create_session() -> str:
     token = secrets.token_urlsafe(32)
     _sessions[token] = time.time() + 86400 * 7  # 7-day expiry
+    _save_sessions()
     return token
 
 
@@ -258,6 +292,7 @@ async def auth_logout(request):
     token = request.cookies.get("ombre_session")
     if token:
         _sessions.pop(token, None)
+        _save_sessions()
     resp = JSONResponse({"ok": True})
     resp.delete_cookie("ombre_session")
     return resp
@@ -284,6 +319,7 @@ async def auth_change_password(request):
         return JSONResponse({"error": "新密码不能少于6位"}, status_code=400)
     _save_password_hash(new_pwd)
     _sessions.clear()
+    _save_sessions()
     token = _create_session()
     resp = JSONResponse({"ok": True})
     resp.set_cookie("ombre_session", token, httponly=True, samesite="lax", max_age=86400 * 7)
