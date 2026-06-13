@@ -42,6 +42,8 @@ import hmac
 import secrets
 import time
 import json as _json_lib
+import zipfile
+import io
 import httpx
 
 
@@ -1776,13 +1778,30 @@ async def api_import_upload(request):
                 return JSONResponse({"error": "No file field"}, status_code=400)
             raw_bytes = await file_field.read()
             filename = getattr(file_field, "filename", "upload")
-            raw_content = raw_bytes.decode("utf-8", errors="replace")
         else:
-            body = await request.body()
-            raw_content = body.decode("utf-8", errors="replace")
-            # Try to get filename from query params
+            raw_bytes = await request.body()
             filename = request.query_params.get("filename", "upload")
 
+        if not raw_bytes:
+            return JSONResponse({"error": "Empty file"}, status_code=400)
+
+        # Unpack zip — extract conversations.json or first json inside
+        if filename.lower().endswith(".zip") or raw_bytes[:2] == b"PK":
+            try:
+                with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
+                    names = zf.namelist()
+                    candidates = [n for n in names if n.endswith("conversations.json")]
+                    if not candidates:
+                        candidates = [n for n in names if n.endswith(".json") and not n.startswith("__MACOSX")]
+                    if not candidates:
+                        return JSONResponse({"error": "zip 内未找到 JSON 文件 / No JSON file found in zip"}, status_code=400)
+                    target = candidates[0]
+                    raw_bytes = zf.read(target)
+                    filename = target.split("/")[-1]
+            except zipfile.BadZipFile:
+                return JSONResponse({"error": "无效的 zip 文件 / Invalid zip file"}, status_code=400)
+
+        raw_content = raw_bytes.decode("utf-8", errors="replace")
         if not raw_content.strip():
             return JSONResponse({"error": "Empty file"}, status_code=400)
 

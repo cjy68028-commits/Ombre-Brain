@@ -673,7 +673,8 @@
     <div id="import-upload-zone" style="border:2px dashed var(--border);border-radius:16px;padding:40px;text-align:center;cursor:pointer;margin:20px 0;transition:border-color .2s;">
       <div style="font-size:32px;margin-bottom:8px;">📁</div>
       <div>拖拽文件到此处，或 <span style="color:var(--accent);text-decoration:underline;">点击选择</span></div>
-      <input type="file" id="import-file-input" accept=".json,.txt,.md,.jsonl" style="display:none" />
+      <div style="font-size:12px;color:var(--muted);margin-top:6px;">支持 Claude 导出 zip / JSON · ChatGPT JSON · Markdown · 纯文本</div>
+      <input type="file" id="import-file-input" accept=".json,.txt,.md,.jsonl,.zip" style="display:none" />
     </div>
 
     <div style="margin:12px 0;">
