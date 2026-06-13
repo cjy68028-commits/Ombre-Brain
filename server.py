@@ -1354,6 +1354,42 @@ async def api_bucket_detail(request):
     })
 
 
+@mcp.custom_route("/api/bucket/{bucket_id}", methods=["DELETE"])
+async def api_bucket_delete(request):
+    """Delete a single bucket by ID."""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    bucket_id = request.path_params["bucket_id"]
+    success = await bucket_mgr.delete(bucket_id)
+    if not success:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return JSONResponse({"deleted": bucket_id})
+
+
+@mcp.custom_route("/api/buckets/clear", methods=["POST"])
+async def api_buckets_clear(request):
+    """Delete all buckets. POST body: {"confirm": "yes"}"""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if body.get("confirm") != "yes":
+        return JSONResponse({"error": "send {\"confirm\": \"yes\"} to proceed"}, status_code=400)
+    buckets = await bucket_mgr.list_all(include_archive=True)
+    deleted = 0
+    for b in buckets:
+        try:
+            await bucket_mgr.delete(b["id"])
+            deleted += 1
+        except Exception:
+            pass
+    return JSONResponse({"deleted": deleted})
+
+
 @mcp.custom_route("/api/search", methods=["GET"])
 async def api_search(request):
     """Search buckets by query."""
