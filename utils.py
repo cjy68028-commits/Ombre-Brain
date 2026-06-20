@@ -15,7 +15,9 @@ import uuid
 import yaml
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+_CST = timezone(timedelta(hours=8))
 
 
 def load_config(config_path: str = None) -> dict:
@@ -24,15 +26,15 @@ def load_config(config_path: str = None) -> dict:
     加载配置文件。
 
     Priority: environment variables > config.yaml > built-in defaults.
-    优先级：环境变量 > config.yaml > 内置默认值。
+    优先级：环境变量 > config.yaml > 内置默认値。
     """
     # --- Built-in defaults (fallback so it runs even without config.yaml) ---
-    # --- 内置默认配置（兜底，保证即使没有 config.yaml 也能跑）---
+    # --- 内置默认配置（底底，保证即使没有 config.yaml 也能跑）---
     defaults = {
         "transport": "stdio",
         "log_level": "INFO",
         "buckets_dir": os.path.join(os.path.dirname(os.path.abspath(__file__)), "buckets"),
-        "merge_threshold": 75,
+        "merge_threshold": 60,
         "dehydration": {
             "model": "deepseek-chat",
             "base_url": "https://api.deepseek.com/v1",
@@ -41,8 +43,8 @@ def load_config(config_path: str = None) -> dict:
             "temperature": 0.1,
         },
         "decay": {
-            "lambda": 0.05,
-            "threshold": 0.3,
+            "lambda": 0.1,
+            "threshold": 1.5,
             "check_interval_hours": 24,
             "emotion_weights": {
                 "base": 1.0,
@@ -118,6 +120,21 @@ def load_config(config_path: str = None) -> dict:
     if env_embed_base_url:
         config.setdefault("embedding", {})["base_url"] = env_embed_base_url
 
+    # OMBRE_DECAY_LAMBDA overrides decay.lambda
+    env_decay_lambda = os.environ.get("OMBRE_DECAY_LAMBDA", "")
+    if env_decay_lambda:
+        config.setdefault("decay", {})["lambda"] = float(env_decay_lambda)
+
+    # OMBRE_DECAY_THRESHOLD overrides decay.threshold
+    env_decay_threshold = os.environ.get("OMBRE_DECAY_THRESHOLD", "")
+    if env_decay_threshold:
+        config.setdefault("decay", {})["threshold"] = float(env_decay_threshold)
+
+    # OMBRE_MERGE_THRESHOLD overrides merge_threshold
+    env_merge_threshold = os.environ.get("OMBRE_MERGE_THRESHOLD", "")
+    if env_merge_threshold:
+        config["merge_threshold"] = int(env_merge_threshold)
+
     # --- Ensure bucket storage directories exist ---
     # --- 确保记忆桶存储目录存在 ---
     buckets_dir = config["buckets_dir"]
@@ -130,7 +147,7 @@ def load_config(config_path: str = None) -> dict:
 def _deep_merge(base: dict, override: dict) -> dict:
     """
     Deep-merge two dicts; override values take precedence.
-    深度合并两个字典，override 的值覆盖 base。
+    深度合并两个字典，override 的値覆盖 base。
     """
     result = base.copy()
     for key, value in override.items():
@@ -186,7 +203,7 @@ def sanitize_name(name: str) -> str:
     """
     if not isinstance(name, str):
         return "unnamed"
-    cleaned = re.sub(r"[^\w\s\u4e00-\u9fff-]", "", name, flags=re.UNICODE)
+    cleaned = re.sub(r"[^\w\s一-鿿-]", "", name, flags=re.UNICODE)
     cleaned = cleaned.strip()[:80]
     return cleaned if cleaned else "unnamed"
 
@@ -219,14 +236,14 @@ def count_tokens_approx(text: str) -> int:
     """
     if not text:
         return 0
-    chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", text))
+    chinese_chars = len(re.findall(r"[一-鿿]", text))
     english_words = len(re.findall(r"[a-zA-Z]+", text))
     return int(chinese_chars * 1.5 + english_words * 1.3 + len(text) * 0.05)
 
 
 def now_iso() -> str:
     """
-    Return current time as ISO format string.
-    返回当前时间的 ISO 格式字符串。
+    Return current CST (UTC+8) time as ISO format string.
+    返回当前成都时间（UTC+8）的 ISO 格式字符串。
     """
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now(_CST).isoformat(timespec="seconds")
