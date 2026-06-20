@@ -15,7 +15,9 @@ import uuid
 import yaml
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+_CST = timezone(timedelta(hours=8))
 
 
 def load_config(config_path: str = None) -> dict:
@@ -241,7 +243,7 @@ def count_tokens_approx(text: str) -> int:
 
 def now_iso() -> str:
     """
-    Return current time as ISO format string.
-    返回当前时间的 ISO 格式字符串。
+    Return current CST (UTC+8) time as ISO format string.
+    返回当前成都时间（UTC+8）的 ISO 格式字符串。
     """
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now(_CST).isoformat(timespec="seconds")
