@@ -39,8 +39,8 @@ class DecayEngine:
     def __init__(self, config: dict, bucket_mgr):
         # --- Load decay parameters / 加载衰减参数 ---
         decay_cfg = config.get("decay", {})
-        self.decay_lambda = decay_cfg.get("lambda", 0.05)
-        self.threshold = decay_cfg.get("threshold", 0.3)
+        self.decay_lambda = decay_cfg.get("lambda", 0.1)
+        self.threshold = decay_cfg.get("threshold", 1.5)
         self.check_interval = decay_cfg.get("check_interval_hours", 24)
 
         # --- Emotion weight params (continuous arousal coordinate) ---
