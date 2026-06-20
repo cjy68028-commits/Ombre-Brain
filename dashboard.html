@@ -1068,7 +1068,7 @@ document.getElementById('search-input').addEventListener('input', (e) => {
 
 async function loadBuckets() {
   try {
-    const res = await fetch(BASE + '/api/buckets');
+    const res = await authFetch(BASE + '/api/buckets');
     const data = await res.json();
     if (!res.ok || !Array.isArray(data)) {
       throw new Error((data && data.error) ? data.error : `HTTP ${res.status}`);
@@ -1159,7 +1159,7 @@ function renderBuckets(buckets) {
 
 async function searchBuckets(query) {
   try {
-    var res = await fetch(BASE + '/api/search?q=' + encodeURIComponent(query));
+    var res = await authFetch(BASE + '/api/search?q=' + encodeURIComponent(query));
     var results = await res.json();
     renderBuckets(results);
   } catch (e) {
@@ -1174,7 +1174,7 @@ async function showDetail(id) {
   panel.classList.add('open');
 
   try {
-    var res = await fetch(BASE + '/api/bucket/' + id);
+    var res = await authFetch(BASE + '/api/bucket/' + id);
     var b = await res.json();
     var meta = b.metadata || {};
     content.innerHTML =
@@ -1223,7 +1223,7 @@ async function loadNetwork() {
   ctx.fillText('加载记忆网络…', W/2, H/2);
 
   try {
-    var res = await fetch(BASE + '/api/network');
+    var res = await authFetch(BASE + '/api/network');
     networkData = await res.json();
     drawNetwork(ctx, W, H, networkData);
   } catch(e) {
@@ -1374,7 +1374,7 @@ async function runBreathDebug() {
   if (arousal) url += '&arousal=' + arousal;
 
   try {
-    var res = await fetch(url);
+    var res = await authFetch(url);
     var data = await res.json();
 
     document.getElementById('fs-input').classList.add('active');
@@ -1442,7 +1442,7 @@ document.getElementById('breath-query').addEventListener('keydown', function(e) 
 
 async function loadConfig() {
   try {
-    var res = await fetch(BASE + '/api/config');
+    var res = await authFetch(BASE + '/api/config');
     var cfg = await res.json();
     document.getElementById('cfg-dehy-model').value = cfg.dehydration.model || '';
     document.getElementById('cfg-dehy-url').value = cfg.dehydration.base_url || '';
@@ -1481,7 +1481,7 @@ async function saveConfig(persist) {
 
   var status = document.getElementById('config-status');
   try {
-    var res = await fetch(BASE + '/api/config', {
+    var res = await authFetch(BASE + '/api/config', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body),
@@ -1519,7 +1519,7 @@ async function startImport(file) {
   const fd = new FormData();
   fd.append('file', file);
   try {
-    const res = await fetch(BASE + '/api/import/upload?preserve_raw=' + (preserveRaw ? '1' : '0'), { method: 'POST', body: fd });
+    const res = await authFetch(BASE + '/api/import/upload?preserve_raw=' + (preserveRaw ? '1' : '0'), { method: 'POST', body: fd });
     const data = await res.json();
     if (data.error) { alert('导入失败: ' + data.error); return; }
     document.getElementById('import-progress').style.display = '';
@@ -1532,13 +1532,13 @@ let importPollTimer;
 async function pollImportStatus() {
   clearInterval(importPollTimer);
   try {
-    const res = await fetch(BASE + '/api/import/status');
+    const res = await authFetch(BASE + '/api/import/status');
     const s = await res.json();
     updateImportUI(s);
     if (s.status === 'running') {
       importPollTimer = setInterval(async () => {
         try {
-          const r2 = await fetch(BASE + '/api/import/status');
+          const r2 = await authFetch(BASE + '/api/import/status');
           updateImportUI(await r2.json());
         } catch(e) {}
       }, 2000);
@@ -1570,14 +1570,14 @@ function updateImportUI(s) {
 }
 
 async function pauseImport() {
-  try { await fetch(BASE + '/api/import/pause', { method: 'POST' }); } catch(e) {}
+  try { await authFetch(BASE + '/api/import/pause', { method: 'POST' }); } catch(e) {}
 }
 
 async function loadImportResults() {
   const container = document.getElementById('import-results-list');
   container.innerHTML = '<div class="loading">加载中…</div>';
   try {
-    const res = await fetch(BASE + '/api/import/results?limit=30');
+    const res = await authFetch(BASE + '/api/import/results?limit=30');
     const data = await res.json();
     if (!data.buckets || !data.buckets.length) {
       container.innerHTML = '<p style="color:var(--text-dim)">暂无记忆桶</p>';
@@ -1606,7 +1606,7 @@ async function detectPatterns() {
   const container = document.getElementById('import-patterns');
   container.innerHTML = '<div class="loading">检测中…</div>';
   try {
-    const res = await fetch(BASE + '/api/import/patterns');
+    const res = await authFetch(BASE + '/api/import/patterns');
     const data = await res.json();
     if (!data.patterns || !data.patterns.length) { container.innerHTML = '<p style="color:var(--text-dim)">未检测到高频模式</p>'; return; }
     container.innerHTML = data.patterns.map(p => `
@@ -1628,7 +1628,7 @@ async function detectPatterns() {
 
 async function reviewAction(bid, action) {
   try {
-    await fetch(BASE + '/api/import/review', {
+    await authFetch(BASE + '/api/import/review', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ decisions: [{ bucket_id: bid, action }] })
     });
@@ -1641,7 +1641,7 @@ async function reviewAction(bid, action) {
 async function batchReview(idsJson, action) {
   try {
     const ids = JSON.parse(idsJson);
-    await fetch(BASE + '/api/import/review', {
+    await authFetch(BASE + '/api/import/review', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ decisions: ids.map(id => ({ bucket_id: id, action })) })
     });
