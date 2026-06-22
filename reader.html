@@ -286,12 +286,13 @@ async function renderPage() {
           replyBtn.className = 'reply-btn';
           replyBtn.textContent = '小克回复';
           replyBtn.dataset.idx = globalIdx;
-          replyBtn.onclick = () => toggleClaudeReply(globalIdx, replyBtn);
+          replyBtn.dataset.annotText = a.text;
+          replyBtn.onclick = () => toggleClaudeReply(globalIdx, a.text);
           area.appendChild(replyBtn);
           const replyArea = document.createElement('div');
           replyArea.className = 'note-input-area claude-reply-area';
           replyArea.id = `claude-reply-${globalIdx}`;
-          replyArea.innerHTML = `<textarea class="note-textarea" placeholder="粘贴小克的回复…" rows="3" style="color:var(--claude-text)"></textarea><div class="note-actions"><button class="note-cancel" onclick="closeClaudeReply(${globalIdx})">取消</button><button class="note-submit" style="background:var(--claude-bubble-border)" onclick="submitClaudeReply(${globalIdx})">发出</button></div>`;
+          replyArea.innerHTML = `<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;padding:6px 8px;background:var(--bg);border-radius:6px;border-left:2px solid var(--user-bubble-border)"><span style="color:var(--user-text)">玖瑶：</span><span id="claude-reply-ctx-${globalIdx}"></span></div><textarea class="note-textarea" placeholder="粘贴小克的回复…" rows="3" style="color:var(--claude-text)"></textarea><div class="note-actions"><button class="note-cancel" onclick="closeClaudeReply(${globalIdx})">取消</button><button class="note-submit" style="background:var(--claude-bubble-border)" onclick="submitClaudeReply(${globalIdx})">发出</button></div>`;
           area.appendChild(replyArea);
         }
       });
@@ -385,12 +386,16 @@ function showLibrary() {
   currentBook = null;
 }
 
-function toggleClaudeReply(idx, btn) {
+function toggleClaudeReply(idx, annotText) {
   const area = document.getElementById(`claude-reply-${idx}`);
   if (area.classList.contains('open')) {
     area.classList.remove('open');
   } else {
     area.classList.add('open');
+    const ctx = document.getElementById(`claude-reply-ctx-${idx}`);
+    if (ctx) ctx.textContent = annotText;
+    navigator.clipboard.writeText(annotText).catch(() => {});
+    toast('已复制批注，去告诉小克~', 3000);
     area.querySelector('textarea').focus();
   }
 }
