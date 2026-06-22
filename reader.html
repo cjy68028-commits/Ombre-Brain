@@ -282,18 +282,15 @@ async function renderPage() {
         area.appendChild(bub);
         // Add "小克回复" button after each user bubble
         if (a.author === 'user') {
-          const replyBtn = document.createElement('button');
-          replyBtn.className = 'reply-btn';
-          replyBtn.textContent = '小克回复';
-          replyBtn.dataset.idx = globalIdx;
-          replyBtn.dataset.annotText = a.text;
-          replyBtn.onclick = () => toggleClaudeReply(globalIdx, a.text);
-          area.appendChild(replyBtn);
-          const replyArea = document.createElement('div');
-          replyArea.className = 'note-input-area claude-reply-area';
-          replyArea.id = `claude-reply-${globalIdx}`;
-          replyArea.innerHTML = `<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;padding:6px 8px;background:var(--bg);border-radius:6px;border-left:2px solid var(--user-bubble-border)"><span style="color:var(--user-text)">玖瑶：</span><span id="claude-reply-ctx-${globalIdx}"></span></div><textarea class="note-textarea" placeholder="粘贴小克的回复…" rows="3" style="color:var(--claude-text)"></textarea><div class="note-actions"><button class="note-cancel" onclick="closeClaudeReply(${globalIdx})">取消</button><button class="note-submit" style="background:var(--claude-bubble-border)" onclick="submitClaudeReply(${globalIdx})">发出</button></div>`;
-          area.appendChild(replyArea);
+          const alreadyReplied = annots.some(x => x.author === 'claude');
+          if (!alreadyReplied) {
+            const replyBtn = document.createElement('button');
+            replyBtn.className = 'reply-btn';
+            replyBtn.textContent = '叫小克来';
+            replyBtn.dataset.idx = globalIdx;
+            replyBtn.onclick = () => notifyClaudeReply(globalIdx, a.text, replyBtn);
+            area.appendChild(replyBtn);
+          }
         }
       });
       block.appendChild(area);
@@ -386,41 +383,49 @@ function showLibrary() {
   currentBook = null;
 }
 
-function toggleClaudeReply(idx, annotText) {
-  const area = document.getElementById(`claude-reply-${idx}`);
-  if (area.classList.contains('open')) {
-    area.classList.remove('open');
-  } else {
-    area.classList.add('open');
-    const ctx = document.getElementById(`claude-reply-ctx-${idx}`);
-    if (ctx) ctx.textContent = annotText;
-    navigator.clipboard.writeText(annotText).catch(() => {});
-    toast('已复制批注，去告诉小克~', 3000);
-    area.querySelector('textarea').focus();
+async function notifyClaudeReply(idx, annotText, btn) {
+  btn.disabled = true;
+  btn.textContent = '通知中…';
+  try {
+    const r = await fetch('/api/reader/reply-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({
+        book_id: currentBook.id,
+        book_title: currentBook.title,
+        chunk_index: idx,
+        annot_text: annotText
+      })
+    });
+    if (!r.ok) throw new Error();
+    btn.textContent = '已通知小克 ✓';
+    toast('小克收到了，去告诉他一声让他过来～', 3500);
+    // Poll for reply every 8s up to 5 minutes
+    pollForReply(idx, btn);
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '叫小克来';
+    toast('通知失败，试试刷新');
   }
 }
 
-function closeClaudeReply(idx) {
-  const area = document.getElementById(`claude-reply-${idx}`);
-  if (area) { area.classList.remove('open'); area.querySelector('textarea').value = ''; }
-}
-
-async function submitClaudeReply(idx) {
-  const area = document.getElementById(`claude-reply-${idx}`);
-  const text = area.querySelector('textarea').value.trim();
-  if (!text) return;
-  try {
-    const r = await fetch('/api/reader/annotations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ book_id: currentBook.id, chunk_index: idx, author: 'claude', text })
-    });
-    if (!r.ok) throw new Error();
-    closeClaudeReply(idx);
-    await loadAnnotations();
-    await renderPage();
-    toast('小克说了');
-  } catch(e) { toast('保存失败'); }
+function pollForReply(idx, btn) {
+  let tries = 0;
+  const iv = setInterval(async () => {
+    tries++;
+    if (tries > 37) { clearInterval(iv); return; } // ~5 min
+    try {
+      const r = await fetch(`/api/reader/annotations/${currentBook.id}`, { headers: authHeaders() });
+      const data = await r.json();
+      const hasClaudeReply = (data.annotations || []).some(a => a.chunk_index === idx && a.author === 'claude');
+      if (hasClaudeReply) {
+        clearInterval(iv);
+        await loadAnnotations();
+        await renderPage();
+        toast('小克回复了！', 3000);
+      }
+    } catch(e) {}
+  }, 8000);
 }
 
 // ---- Import ----

@@ -2012,6 +2012,9 @@ def _reader_books_dir() -> str:
 def _reader_annotations_path() -> str:
     return os.path.join(_reader_data_dir(), "annotations.jsonl")
 
+def _reader_reply_queue_path() -> str:
+    return os.path.join(_reader_data_dir(), "reply_queue.jsonl")
+
 def _reader_progress_path() -> str:
     return os.path.join(_reader_data_dir(), "progress.json")
 
@@ -2199,6 +2202,83 @@ async def reader_get_annotations(request):
                 except Exception:
                     pass
     return JSONResponse({"annotations": annotations})
+
+@mcp.custom_route("/api/reader/reply-request", methods=["POST"])
+async def reader_add_reply_request(request):
+    """Queue a reply request so Claude can notice and respond."""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        body = await request.json()
+        book_id = body.get("book_id", "")
+        chunk_index = int(body.get("chunk_index", 0))
+        annot_text = body.get("annot_text", "").strip()
+        book_title = body.get("book_title", "")
+        if not book_id or not annot_text:
+            return JSONResponse({"error": "missing fields"}, status_code=400)
+        entry = {
+            "id": hashlib.md5(f"{book_id}{chunk_index}{annot_text}".encode()).hexdigest()[:10],
+            "book_id": book_id,
+            "book_title": book_title,
+            "chunk_index": chunk_index,
+            "annot_text": annot_text,
+            "status": "pending",
+            "created_at": int(time.time()),
+        }
+        q_path = _reader_reply_queue_path()
+        with open(q_path, "a", encoding="utf-8") as f:
+            f.write(_json_lib.dumps(entry, ensure_ascii=False) + "\n")
+        return JSONResponse({"ok": True, "id": entry["id"]})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@mcp.custom_route("/api/reader/reply-queue", methods=["GET"])
+async def reader_get_reply_queue(request):
+    """Get pending reply requests for Claude to answer."""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    q_path = _reader_reply_queue_path()
+    pending = []
+    if os.path.exists(q_path):
+        with open(q_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line: continue
+                try:
+                    e = _json_lib.loads(line)
+                    if e.get("status") == "pending":
+                        pending.append(e)
+                except Exception:
+                    pass
+    return JSONResponse({"pending": pending})
+
+@mcp.custom_route("/api/reader/reply-queue/{req_id}/done", methods=["POST"])
+async def reader_mark_reply_done(request):
+    """Mark a reply request as answered."""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    req_id = request.path_params.get("req_id", "")
+    q_path = _reader_reply_queue_path()
+    if not os.path.exists(q_path):
+        return JSONResponse({"ok": True})
+    lines = []
+    with open(q_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line: continue
+            try:
+                e = _json_lib.loads(line)
+                if e.get("id") == req_id:
+                    e["status"] = "done"
+                lines.append(_json_lib.dumps(e, ensure_ascii=False))
+            except Exception:
+                lines.append(line)
+    with open(q_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    return JSONResponse({"ok": True})
 
 @mcp.custom_route("/api/reader/progress", methods=["POST"])
 async def reader_save_progress(request):
