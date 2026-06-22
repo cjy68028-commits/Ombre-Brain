@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>共读书房</title>
+<style>
+  :root {
+    --bg: #0e0e14;
+    --bg2: #16161f;
+    --bg3: #1e1e2a;
+    --border: #2a2a3a;
+    --text: #d4d0c8;
+    --text-dim: #7a7690;
+    --accent: #a78bfa;
+    --user-bubble: #3d1a2e;
+    --user-bubble-border: #c4728a;
+    --user-text: #f4b8cb;
+    --claude-bubble: #0f2340;
+    --claude-bubble-border: #4a90d9;
+    --claude-text: #9dc4f0;
+    --gold: #c9a84c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Georgia', 'Noto Serif SC', serif; min-height: 100vh; }
+
+  /* ---- NAV ---- */
+  .nav { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--bg2); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+  .nav-title { font-size: 15px; color: var(--accent); letter-spacing: 1px; flex: 1; }
+  .nav-btn { background: none; border: 1px solid var(--border); color: var(--text-dim); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; transition: all .2s; }
+  .nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .nav-back { display: none; }
+
+  /* ---- LIBRARY ---- */
+  #library { padding: 24px 20px; max-width: 860px; margin: 0 auto; }
+  .library-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .library-header h2 { font-size: 18px; font-weight: normal; color: var(--text-dim); letter-spacing: 2px; }
+  .import-btn { background: var(--accent); color: #0e0e14; border: none; padding: 8px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: bold; transition: opacity .2s; }
+  .import-btn:hover { opacity: .85; }
+  .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
+  .book-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 20px 16px; cursor: pointer; transition: all .2s; }
+  .book-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .book-card-title { font-size: 15px; line-height: 1.5; margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .book-card-meta { font-size: 12px; color: var(--text-dim); }
+  .book-card-progress { margin-top: 10px; height: 3px; background: var(--border); border-radius: 2px; }
+  .book-card-progress-bar { height: 100%; background: var(--accent); border-radius: 2px; transition: width .3s; }
+  .empty-shelf { text-align: center; padding: 60px 20px; color: var(--text-dim); }
+  .empty-shelf p { margin-bottom: 16px; font-size: 15px; }
+
+  /* ---- READER ---- */
+  #reader { display: none; max-width: 680px; margin: 0 auto; padding: 0 20px 80px; }
+  .reader-title { padding: 20px 0 8px; font-size: 18px; font-weight: normal; color: var(--text-dim); text-align: center; letter-spacing: 1px; }
+  .page-info { text-align: center; font-size: 13px; color: var(--text-dim); margin-bottom: 24px; }
+  .paragraph-block { margin-bottom: 6px; position: relative; }
+  .paragraph-block.has-annotation { border-left: 3px solid var(--gold); padding-left: 12px; }
+  .paragraph-text { font-size: 16px; line-height: 1.9; color: var(--text); padding: 6px 8px; border-radius: 4px; cursor: pointer; transition: background .15s; }
+  .paragraph-text:hover { background: rgba(167,139,250,.07); }
+  .paragraph-text.active { background: rgba(167,139,250,.12); }
+  .annotations-area { padding: 4px 0 4px 4px; }
+  .bubble { padding: 8px 12px; border-radius: 10px; margin-bottom: 6px; font-size: 14px; line-height: 1.6; }
+  .bubble-user { background: var(--user-bubble); border: 1px solid var(--user-bubble-border); color: var(--user-text); }
+  .bubble-claude { background: var(--claude-bubble); border: 1px solid var(--claude-bubble-border); color: var(--claude-text); }
+  .bubble-meta { font-size: 11px; opacity: .6; margin-bottom: 3px; }
+  .note-input-area { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 4px; display: none; }
+  .note-input-area.open { display: block; }
+  .note-textarea { width: 100%; background: none; border: none; color: var(--user-text); font-size: 14px; line-height: 1.6; resize: none; outline: none; font-family: inherit; min-height: 60px; }
+  .note-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+  .note-cancel { background: none; border: 1px solid var(--border); color: var(--text-dim); padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .note-submit { background: var(--user-bubble-border); border: none; color: #fff; padding: 5px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .page-nav { display: flex; justify-content: space-between; align-items: center; padding: 24px 0 0; gap: 12px; }
+  .page-nav-btn { background: var(--bg2); border: 1px solid var(--border); color: var(--text-dim); padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; transition: all .2s; flex: 1; text-align: center; }
+  .page-nav-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .page-nav-btn:disabled { opacity: .3; cursor: default; }
+
+  /* ---- MODAL ---- */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 200; display: none; justify-content: center; align-items: center; padding: 20px; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 28px; width: 100%; max-width: 400px; }
+  .modal h3 { font-size: 16px; font-weight: normal; margin-bottom: 20px; color: var(--text-dim); letter-spacing: 1px; }
+  .modal-input { width: 100%; background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 10px 14px; border-radius: 8px; font-size: 14px; outline: none; margin-bottom: 12px; }
+  .modal-input:focus { border-color: var(--accent); }
+  .modal-drop { border: 2px dashed var(--border); border-radius: 10px; padding: 32px; text-align: center; cursor: pointer; transition: border-color .2s; margin-bottom: 16px; }
+  .modal-drop:hover, .modal-drop.drag { border-color: var(--accent); }
+  .modal-drop p { color: var(--text-dim); font-size: 14px; }
+  .modal-drop input { display: none; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .modal-cancel { background: none; border: 1px solid var(--border); color: var(--text-dim); padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+  .modal-ok { background: var(--accent); color: #0e0e14; border: none; padding: 8px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; }
+  .modal-ok:disabled { opacity: .5; cursor: default; }
+  .upload-status { font-size: 13px; color: var(--text-dim); margin-bottom: 12px; min-height: 20px; }
+
+  /* ---- TOAST ---- */
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 8px; font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .3s; z-index: 300; }
+  .toast.show { opacity: 1; }
+
+  @media (max-width: 480px) {
+    #reader { padding: 0 14px 80px; }
+    .paragraph-text { font-size: 15px; }
+    .book-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <button class="nav-btn nav-back" id="navBack" onclick="showLibrary()">← 书架</button>
+  <div class="nav-title" id="navTitle">共读书房</div>
+</nav>
+
+<div id="library">
+  <div class="library-header">
+    <h2>书架</h2>
+    <button class="import-btn" onclick="openImport()">导入书籍</button>
+  </div>
+  <div class="book-grid" id="bookGrid">
+    <div class="empty-shelf" id="emptyShelf">
+      <p>还没有书籍</p>
+      <button class="import-btn" onclick="openImport()">导入第一本书</button>
+    </div>
+  </div>
+</div>
+
+<div id="reader">
+  <div class="reader-title" id="readerTitle"></div>
+  <div class="page-info" id="pageInfo"></div>
+  <div id="paragraphList"></div>
+  <div class="page-nav">
+    <button class="page-nav-btn" id="prevBtn" onclick="changePage(-1)">← 上一页</button>
+    <button class="page-nav-btn" id="nextBtn" onclick="changePage(1)">下一页 →</button>
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal-overlay" id="importModal">
+  <div class="modal">
+    <h3>导入书籍</h3>
+    <input class="modal-input" id="importTitle" placeholder="书名（可选，默认用文件名）" />
+    <div class="modal-drop" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <p id="dropText">点击选择 .txt 文件<br><small>或拖拽文件到此处</small></p>
+      <input type="file" id="fileInput" accept=".txt" onchange="onFileSelect(event)" />
+    </div>
+    <div class="upload-status" id="uploadStatus"></div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeImport()">取消</button>
+      <button class="modal-ok" id="importOkBtn" disabled onclick="doImport()">导入</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '';
+let currentBook = null;
+let currentPage = 0;
+let totalPages = 0;
+let annotations = {};
+let activeParaIdx = null;
+let selectedFile = null;
+
+const CHUNKS_PER_PAGE = 30;
+
+// ---- Auth helpers ----
+function getToken() {
+  return document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('ombre_session='))?.split('=')[1] || '';
+}
+function authHeaders() {
+  const t = getToken();
+  return t ? { 'Authorization': `Bearer ${t}` } : {};
+}
+
+// ---- Toast ----
+function toast(msg, ms = 2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), ms);
+}
+
+// ---- Library ----
+async function loadLibrary() {
+  try {
+    const r = await fetch('/api/reader/books', { headers: authHeaders() });
+    const data = await r.json();
+    renderLibrary(data.books || []);
+  } catch(e) {
+    toast('加载书架失败');
+  }
+}
+
+function renderLibrary(books) {
+  const grid = document.getElementById('bookGrid');
+  const empty = document.getElementById('emptyShelf');
+  if (!books.length) {
+    grid.innerHTML = '';
+    grid.appendChild(empty);
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  grid.innerHTML = books.map(b => `
+    <div class="book-card" onclick="openBook('${b.id}')">
+      <div class="book-card-title">${esc(b.title)}</div>
+      <div class="book-card-meta">${b.total_chunks} 段 · ${b.char_count ? Math.round(b.char_count/1000)+'k字' : ''}</div>
+      <div class="book-card-progress">
+        <div class="book-card-progress-bar" style="width:${Math.round((b.progress||0)*100)}%"></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ---- Open Book ----
+async function openBook(bookId) {
+  try {
+    const r = await fetch(`/api/reader/books/${bookId}`, { headers: authHeaders() });
+    currentBook = await r.json();
+    totalPages = Math.ceil(currentBook.total_chunks / CHUNKS_PER_PAGE);
+    currentPage = currentBook.last_page || 0;
+    await loadAnnotations();
+    await renderPage();
+    document.getElementById('library').style.display = 'none';
+    document.getElementById('reader').style.display = 'block';
+    document.getElementById('navBack').style.display = 'inline-block';
+    document.getElementById('navTitle').textContent = currentBook.title;
+    window.scrollTo(0, 0);
+  } catch(e) {
+    toast('打开书籍失败');
+  }
+}
+
+async function loadAnnotations() {
+  try {
+    const r = await fetch(`/api/reader/annotations/${currentBook.id}`, { headers: authHeaders() });
+    const data = await r.json();
+    annotations = {};
+    (data.annotations || []).forEach(a => {
+      const key = a.chunk_index;
+      if (!annotations[key]) annotations[key] = [];
+      annotations[key].push(a);
+    });
+  } catch(e) {}
+}
+
+async function renderPage() {
+  const start = currentPage * CHUNKS_PER_PAGE;
+  const r = await fetch(`/api/reader/books/${currentBook.id}/page/${currentPage}`, { headers: authHeaders() });
+  const data = await r.json();
+  const chunks = data.chunks || [];
+
+  document.getElementById('readerTitle').textContent = currentBook.title;
+  document.getElementById('pageInfo').textContent = `第 ${currentPage + 1} / ${totalPages} 页`;
+
+  const list = document.getElementById('paragraphList');
+  list.innerHTML = '';
+
+  chunks.forEach((text, i) => {
+    const globalIdx = start + i;
+    const annots = annotations[globalIdx] || [];
+    const hasAnnot = annots.length > 0;
+
+    const block = document.createElement('div');
+    block.className = 'paragraph-block' + (hasAnnot ? ' has-annotation' : '');
+    block.dataset.idx = globalIdx;
+
+    const para = document.createElement('div');
+    para.className = 'paragraph-text';
+    para.textContent = text;
+    para.onclick = () => toggleNoteInput(globalIdx, para, block);
+
+    block.appendChild(para);
+
+    // Existing annotations
+    if (annots.length) {
+      const area = document.createElement('div');
+      area.className = 'annotations-area';
+      annots.forEach(a => {
+        const bub = document.createElement('div');
+        bub.className = a.author === 'claude' ? 'bubble bubble-claude' : 'bubble bubble-user';
+        bub.innerHTML = `<div class="bubble-meta">${a.author === 'claude' ? '小克' : '玖瑶'} · ${fmtDate(a.created_at)}</div>${esc(a.text)}`;
+        area.appendChild(bub);
+      });
+      block.appendChild(area);
+    }
+
+    // Note input
+    const noteArea = document.createElement('div');
+    noteArea.className = 'note-input-area';
+    noteArea.id = `note-${globalIdx}`;
+    noteArea.innerHTML = `
+      <textarea class="note-textarea" placeholder="写下你的想法…" rows="3"></textarea>
+      <div class="note-actions">
+        <button class="note-cancel" onclick="closeNoteInput(${globalIdx})">取消</button>
+        <button class="note-submit" onclick="submitNote(${globalIdx})">留下</button>
+      </div>`;
+    block.appendChild(noteArea);
+
+    list.appendChild(block);
+  });
+
+  document.getElementById('prevBtn').disabled = currentPage <= 0;
+  document.getElementById('nextBtn').disabled = currentPage >= totalPages - 1;
+
+  // Save progress
+  fetch(`/api/reader/progress`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ book_id: currentBook.id, page: currentPage })
+  }).catch(() => {});
+}
+
+function toggleNoteInput(idx, paraEl, block) {
+  // Close previous
+  if (activeParaIdx !== null && activeParaIdx !== idx) {
+    const prev = document.getElementById(`note-${activeParaIdx}`);
+    if (prev) { prev.classList.remove('open'); prev.querySelector('textarea').value = ''; }
+    document.querySelectorAll('.paragraph-text.active').forEach(el => el.classList.remove('active'));
+  }
+  const area = document.getElementById(`note-${idx}`);
+  if (area.classList.contains('open')) {
+    area.classList.remove('open');
+    paraEl.classList.remove('active');
+    activeParaIdx = null;
+  } else {
+    area.classList.add('open');
+    paraEl.classList.add('active');
+    area.querySelector('textarea').focus();
+    activeParaIdx = idx;
+  }
+}
+
+function closeNoteInput(idx) {
+  const area = document.getElementById(`note-${idx}`);
+  if (area) { area.classList.remove('open'); area.querySelector('textarea').value = ''; }
+  document.querySelectorAll('.paragraph-text.active').forEach(el => el.classList.remove('active'));
+  activeParaIdx = null;
+}
+
+async function submitNote(idx) {
+  const area = document.getElementById(`note-${idx}`);
+  const text = area.querySelector('textarea').value.trim();
+  if (!text) return;
+  try {
+    const r = await fetch('/api/reader/annotations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ book_id: currentBook.id, chunk_index: idx, author: 'user', text })
+    });
+    if (!r.ok) throw new Error();
+    closeNoteInput(idx);
+    await loadAnnotations();
+    await renderPage();
+    toast('已记下');
+  } catch(e) {
+    toast('保存失败');
+  }
+}
+
+async function changePage(delta) {
+  currentPage = Math.max(0, Math.min(totalPages - 1, currentPage + delta));
+  window.scrollTo(0, 0);
+  await renderPage();
+}
+
+function showLibrary() {
+  document.getElementById('library').style.display = 'block';
+  document.getElementById('reader').style.display = 'none';
+  document.getElementById('navBack').style.display = 'none';
+  document.getElementById('navTitle').textContent = '共读书房';
+  currentBook = null;
+  loadLibrary();
+}
+
+// ---- Import ----
+function openImport() {
+  document.getElementById('importModal').classList.add('open');
+  document.getElementById('importTitle').value = '';
+  document.getElementById('dropText').innerHTML = '点击选择 .txt 文件<br><small>或拖拽文件到此处</small>';
+  document.getElementById('uploadStatus').textContent = '';
+  document.getElementById('importOkBtn').disabled = true;
+  selectedFile = null;
+}
+
+function closeImport() {
+  document.getElementById('importModal').classList.remove('open');
+}
+
+function onFileSelect(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  selectedFile = f;
+  document.getElementById('dropText').innerHTML = `<strong>${esc(f.name)}</strong><br><small>${Math.round(f.size/1024)}KB</small>`;
+  document.getElementById('importOkBtn').disabled = false;
+}
+
+async function doImport() {
+  if (!selectedFile) return;
+  const btn = document.getElementById('importOkBtn');
+  const status = document.getElementById('uploadStatus');
+  btn.disabled = true;
+  status.textContent = '上传中…';
+
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+  const title = document.getElementById('importTitle').value.trim() || selectedFile.name.replace(/\.txt$/i, '');
+  formData.append('title', title);
+
+  try {
+    const token = getToken();
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const r = await fetch('/api/reader/import', { method: 'POST', headers, body: formData });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || '导入失败');
+    status.textContent = `导入成功：${data.total_chunks} 段`;
+    setTimeout(() => { closeImport(); loadLibrary(); }, 1200);
+  } catch(e) {
+    status.textContent = e.message;
+    btn.disabled = false;
+  }
+}
+
+// Drag and drop
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) { document.getElementById('fileInput').files = e.dataTransfer.files; onFileSelect({ target: { files: [f] } }); }
+});
+
+// Keyboard navigation
+document.addEventListener('keydown', e => {
+  if (!currentBook) return;
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') changePage(1);
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') changePage(-1);
+});
+
+// ---- Helpers ----
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtDate(ts) {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+loadLibrary();
+</script>
+</body>
+</html>

@@ -1994,6 +1994,232 @@ async def api_system_status(request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+# =============================================================
+# /reader — Co-reading room (共读书房)
+# =============================================================
+
+def _reader_data_dir() -> str:
+    base = os.environ.get("OMBRE_DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
+    path = os.path.join(base, "reader")
+    os.makedirs(os.path.join(path, "books"), exist_ok=True)
+    return path
+
+def _reader_books_dir() -> str:
+    d = os.path.join(_reader_data_dir(), "books")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+def _reader_annotations_path() -> str:
+    return os.path.join(_reader_data_dir(), "annotations.jsonl")
+
+def _reader_progress_path() -> str:
+    return os.path.join(_reader_data_dir(), "progress.json")
+
+def _load_reader_progress() -> dict:
+    p = _reader_progress_path()
+    if os.path.exists(p):
+        with open(p, "r", encoding="utf-8") as f:
+            return _json_lib.load(f)
+    return {}
+
+def _save_reader_progress(data: dict) -> None:
+    with open(_reader_progress_path(), "w", encoding="utf-8") as f:
+        _json_lib.dump(data, f, ensure_ascii=False, indent=2)
+
+def _chunk_text(text: str, min_chars: int = 20) -> list:
+    """Split text into paragraphs, filtering out blanks."""
+    raw = text.splitlines()
+    chunks = []
+    for line in raw:
+        line = line.strip()
+        if len(line) >= min_chars:
+            chunks.append(line)
+        elif line and chunks:
+            # Append short lines to previous paragraph
+            chunks[-1] = chunks[-1] + " " + line
+    return chunks
+
+@mcp.custom_route("/reader", methods=["GET"])
+async def reader_page(request):
+    """Serve the co-reading room HTML."""
+    from starlette.responses import HTMLResponse
+    reader_path = os.path.join(os.path.dirname(__file__), "reader.html")
+    try:
+        with open(reader_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except FileNotFoundError:
+        return HTMLResponse("<h1>reader.html not found</h1>", status_code=404)
+
+@mcp.custom_route("/api/reader/import", methods=["POST"])
+async def reader_import(request):
+    """Import a txt book and chunk it."""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        form = await request.form()
+        file_obj = form.get("file")
+        title = str(form.get("title", "")).strip()
+        if not file_obj:
+            return JSONResponse({"error": "no file"}, status_code=400)
+        raw_bytes = await file_obj.read()
+        # Try UTF-8 then GBK
+        try:
+            text = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw_bytes.decode("gbk", errors="replace")
+        if not title:
+            title = getattr(file_obj, "filename", "未命名").rsplit(".", 1)[0]
+        chunks = _chunk_text(text)
+        if not chunks:
+            return JSONResponse({"error": "文件内容为空或无法解析"}, status_code=400)
+        book_id = hashlib.md5((title + str(time.time())).encode()).hexdigest()[:12]
+        book_dir = os.path.join(_reader_books_dir(), book_id)
+        os.makedirs(book_dir, exist_ok=True)
+        manifest = {
+            "id": book_id,
+            "title": title,
+            "total_chunks": len(chunks),
+            "char_count": len(text),
+            "created_at": int(time.time()),
+        }
+        with open(os.path.join(book_dir, "manifest.json"), "w", encoding="utf-8") as f:
+            _json_lib.dump(manifest, f, ensure_ascii=False, indent=2)
+        with open(os.path.join(book_dir, "chunks.json"), "w", encoding="utf-8") as f:
+            _json_lib.dump(chunks, f, ensure_ascii=False)
+        return JSONResponse({"id": book_id, "title": title, "total_chunks": len(chunks)})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@mcp.custom_route("/api/reader/books", methods=["GET"])
+async def reader_list_books(request):
+    """List all imported books."""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        books_dir = _reader_books_dir()
+        progress = _load_reader_progress()
+        books = []
+        for book_id in os.listdir(books_dir):
+            manifest_path = os.path.join(books_dir, book_id, "manifest.json")
+            if os.path.exists(manifest_path):
+                with open(manifest_path, "r", encoding="utf-8") as f:
+                    m = _json_lib.load(f)
+                last_page = progress.get(book_id, {}).get("page", 0)
+                total_pages = (m["total_chunks"] + 29) // 30
+                m["progress"] = last_page / max(total_pages - 1, 1) if total_pages > 1 else 0
+                m["last_page"] = last_page
+                books.append(m)
+        books.sort(key=lambda b: b.get("created_at", 0), reverse=True)
+        return JSONResponse({"books": books})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@mcp.custom_route("/api/reader/books/{book_id}", methods=["GET"])
+async def reader_get_book(request):
+    """Get book manifest."""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    book_id = request.path_params.get("book_id", "")
+    manifest_path = os.path.join(_reader_books_dir(), book_id, "manifest.json")
+    if not os.path.exists(manifest_path):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    progress = _load_reader_progress()
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        m = _json_lib.load(f)
+    m["last_page"] = progress.get(book_id, {}).get("page", 0)
+    return JSONResponse(m)
+
+@mcp.custom_route("/api/reader/books/{book_id}/page/{page}", methods=["GET"])
+async def reader_get_page(request):
+    """Get a page of chunks (30 paragraphs per page)."""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    book_id = request.path_params.get("book_id", "")
+    page = int(request.path_params.get("page", 0))
+    chunks_path = os.path.join(_reader_books_dir(), book_id, "chunks.json")
+    if not os.path.exists(chunks_path):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    with open(chunks_path, "r", encoding="utf-8") as f:
+        all_chunks = _json_lib.load(f)
+    start = page * 30
+    end = start + 30
+    return JSONResponse({"chunks": all_chunks[start:end], "page": page, "start_index": start})
+
+@mcp.custom_route("/api/reader/annotations", methods=["POST"])
+async def reader_add_annotation(request):
+    """Add a user or claude annotation."""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        body = await request.json()
+        book_id = body.get("book_id", "")
+        chunk_index = int(body.get("chunk_index", 0))
+        author = body.get("author", "user")
+        text = body.get("text", "").strip()
+        if not book_id or not text:
+            return JSONResponse({"error": "missing fields"}, status_code=400)
+        entry = {
+            "book_id": book_id,
+            "chunk_index": chunk_index,
+            "author": author,
+            "text": text,
+            "created_at": int(time.time()),
+        }
+        annot_path = _reader_annotations_path()
+        with open(annot_path, "a", encoding="utf-8") as f:
+            f.write(_json_lib.dumps(entry, ensure_ascii=False) + "\n")
+        return JSONResponse({"ok": True, "entry": entry})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@mcp.custom_route("/api/reader/annotations/{book_id}", methods=["GET"])
+async def reader_get_annotations(request):
+    """Get all annotations for a book."""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    book_id = request.path_params.get("book_id", "")
+    annot_path = _reader_annotations_path()
+    annotations = []
+    if os.path.exists(annot_path):
+        with open(annot_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = _json_lib.loads(line)
+                    if entry.get("book_id") == book_id:
+                        annotations.append(entry)
+                except Exception:
+                    pass
+    return JSONResponse({"annotations": annotations})
+
+@mcp.custom_route("/api/reader/progress", methods=["POST"])
+async def reader_save_progress(request):
+    """Save reading progress."""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        body = await request.json()
+        book_id = body.get("book_id", "")
+        page = int(body.get("page", 0))
+        if not book_id:
+            return JSONResponse({"error": "missing book_id"}, status_code=400)
+        progress = _load_reader_progress()
+        progress[book_id] = {"page": page, "updated_at": int(time.time())}
+        _save_reader_progress(progress)
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 # --- Entry point / 启动入口 ---
 if __name__ == "__main__":
     transport = config.get("transport", "stdio")
