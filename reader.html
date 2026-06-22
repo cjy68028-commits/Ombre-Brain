@@ -93,6 +93,8 @@
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 8px; font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .3s; z-index: 300; }
   .toast.show { opacity: 1; }
 
+  .reply-btn { background: none; border: 1px solid var(--claude-bubble-border); color: var(--claude-text); padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; margin: 4px 0 6px; display: block; }
+  .reply-btn:hover { background: var(--claude-bubble); }
   @media (max-width: 480px) {
     #reader { padding: 0 14px 80px; }
     .paragraph-text { font-size: 15px; }
@@ -278,6 +280,20 @@ async function renderPage() {
         bub.className = a.author === 'claude' ? 'bubble bubble-claude' : 'bubble bubble-user';
         bub.innerHTML = `<div class="bubble-meta">${a.author === 'claude' ? '小克' : '玖瑶'} · ${fmtDate(a.created_at)}</div>${esc(a.text)}`;
         area.appendChild(bub);
+        // Add "小克回复" button after each user bubble
+        if (a.author === 'user') {
+          const replyBtn = document.createElement('button');
+          replyBtn.className = 'reply-btn';
+          replyBtn.textContent = '小克回复';
+          replyBtn.dataset.idx = globalIdx;
+          replyBtn.onclick = () => toggleClaudeReply(globalIdx, replyBtn);
+          area.appendChild(replyBtn);
+          const replyArea = document.createElement('div');
+          replyArea.className = 'note-input-area claude-reply-area';
+          replyArea.id = `claude-reply-${globalIdx}`;
+          replyArea.innerHTML = `<textarea class="note-textarea" placeholder="粘贴小克的回复…" rows="3" style="color:var(--claude-text)"></textarea><div class="note-actions"><button class="note-cancel" onclick="closeClaudeReply(${globalIdx})">取消</button><button class="note-submit" style="background:var(--claude-bubble-border)" onclick="submitClaudeReply(${globalIdx})">发出</button></div>`;
+          area.appendChild(replyArea);
+        }
       });
       block.appendChild(area);
     }
@@ -367,7 +383,39 @@ function showLibrary() {
   document.getElementById('navBack').style.display = 'none';
   document.getElementById('navTitle').textContent = '共读书房';
   currentBook = null;
-  loadLibrary();
+}
+
+function toggleClaudeReply(idx, btn) {
+  const area = document.getElementById(`claude-reply-${idx}`);
+  if (area.classList.contains('open')) {
+    area.classList.remove('open');
+  } else {
+    area.classList.add('open');
+    area.querySelector('textarea').focus();
+  }
+}
+
+function closeClaudeReply(idx) {
+  const area = document.getElementById(`claude-reply-${idx}`);
+  if (area) { area.classList.remove('open'); area.querySelector('textarea').value = ''; }
+}
+
+async function submitClaudeReply(idx) {
+  const area = document.getElementById(`claude-reply-${idx}`);
+  const text = area.querySelector('textarea').value.trim();
+  if (!text) return;
+  try {
+    const r = await fetch('/api/reader/annotations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ book_id: currentBook.id, chunk_index: idx, author: 'claude', text })
+    });
+    if (!r.ok) throw new Error();
+    closeClaudeReply(idx);
+    await loadAnnotations();
+    await renderPage();
+    toast('小克说了');
+  } catch(e) { toast('保存失败'); }
 }
 
 // ---- Import ----
