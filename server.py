@@ -2135,7 +2135,7 @@ async def api_system_status(request):
 # =============================================================
 
 def _reader_data_dir() -> str:
-    base = os.environ.get("OMBRE_DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
+    base = config.get("buckets_dir", os.environ.get("OMBRE_BUCKETS_DIR", os.path.join(os.path.dirname(__file__), "data")))
     path = os.path.join(base, "reader")
     os.makedirs(os.path.join(path, "books"), exist_ok=True)
     return path
