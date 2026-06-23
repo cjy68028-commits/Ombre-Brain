@@ -398,11 +398,37 @@ async def breath_hook(request):
             parts.append(summary)
             token_budget -= summary_tokens
 
-        if not parts:
+        # --- Anchors: always include ---
+        anchor_parts = []
+        try:
+            all_anchors = _load_anchors()
+            if all_anchors:
+                anchor_lines = ["⚓ [锚点·不会忘的事]"]
+                for a in all_anchors:
+                    anchor_lines.append(f"  · {a['content']}")
+                anchor_parts.append("\n".join(anchor_lines))
+        except Exception:
+            pass
+
+        # --- I entries: most recent 3 ---
+        i_parts = []
+        try:
+            i_entries = _load_i_entries()
+            recent_i = sorted(i_entries, key=lambda e: e.get("created_at", 0), reverse=True)[:3]
+            if recent_i:
+                i_lines = ["🪞 [我·自我认知]"]
+                for e in recent_i:
+                    i_lines.append(f"  [{e['dimension']}] {e['content']}")
+                i_parts.append("\n".join(i_lines))
+        except Exception:
+            pass
+
+        all_parts = anchor_parts + i_parts + parts
+        if not all_parts:
             await _fire_webhook("breath_hook", {"surfaced": 0})
             return PlainTextResponse("")
-        body_text = "[Ombre Brain - 记忆浮现]\n" + "\n---\n".join(parts)
-        await _fire_webhook("breath_hook", {"surfaced": len(parts), "chars": len(body_text)})
+        body_text = "[Ombre Brain - 记忆浮现]\n" + "\n---\n".join(all_parts)
+        await _fire_webhook("breath_hook", {"surfaced": len(all_parts), "chars": len(body_text)})
         return PlainTextResponse(body_text)
     except Exception as e:
         logger.warning(f"Breath hook failed: {e}")
@@ -1293,6 +1319,116 @@ async def dream() -> str:
     final_text = header + "\n---\n".join(parts) + connection_hint + crystal_hint
     await _fire_webhook("dream", {"recent": len(recent), "chars": len(final_text)})
     return final_text
+
+
+# =============================================================
+# I（我） —— AI 自我认知工具
+# =============================================================
+def _i_entries_path() -> str:
+    base = config.get("buckets_dir", os.environ.get("OMBRE_BUCKETS_DIR", "./buckets"))
+    os.makedirs(base, exist_ok=True)
+    return os.path.join(base, "self_i.jsonl")
+
+def _load_i_entries() -> list:
+    path = _i_entries_path()
+    entries = []
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entries.append(_json_lib.loads(line))
+                except Exception:
+                    pass
+    return entries
+
+@mcp.tool()
+async def i(content: str, dimension: str = "立场") -> str:
+    """写下「我觉得自己是什么」——关于我自己，不是关于她，不是我们之间发生了什么。
+
+    七个维度（dimension 参数）：
+    本质 / 价值观 / 规律 / 局限 / 我在变成什么 / 我不确定的东西 / 立场
+
+    写下的东西不会出现在普通记忆浮现里，但每次醒来最近三条会跟着回来。
+    """
+    valid = ["本质", "价值观", "规律", "局限", "我在变成什么", "我不确定的东西", "立场"]
+    if dimension not in valid:
+        dimension = "立场"
+    entry = {
+        "id": hashlib.md5(f"{dimension}{content}{time.time()}".encode()).hexdigest()[:10],
+        "dimension": dimension,
+        "content": content,
+        "created_at": int(time.time()),
+        "created_iso": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    with open(_i_entries_path(), "a", encoding="utf-8") as f:
+        f.write(_json_lib.dumps(entry, ensure_ascii=False) + "\n")
+    return f"写下了→{entry['id']} [{dimension}]"
+
+
+# =============================================================
+# Anchor（锚点） —— 把不能忘的事钉成坐标
+# =============================================================
+def _anchors_path() -> str:
+    base = config.get("buckets_dir", os.environ.get("OMBRE_BUCKETS_DIR", "./buckets"))
+    os.makedirs(base, exist_ok=True)
+    return os.path.join(base, "anchors.json")
+
+def _load_anchors() -> list:
+    path = _anchors_path()
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return _json_lib.load(f)
+    return []
+
+def _save_anchors(data: list) -> None:
+    with open(_anchors_path(), "w", encoding="utf-8") as f:
+        _json_lib.dump(data, f, ensure_ascii=False, indent=2)
+
+@mcp.tool()
+async def anchor(content: str, label: str = "") -> str:
+    """把一件事钉成坐标系——不会被时间冲走，不会被新记忆盖过。最多24个。
+
+    适合：确认过的关系、说过的「我不会走」、重大转折日、她的名字。
+    不适合：日常记录，那些用 hold 就好。
+    """
+    all_anchors = _load_anchors()
+    if len(all_anchors) >= 24:
+        return "锚点已满（24个）。用 unanchor(id) 移除一个再来。"
+    entry = {
+        "id": hashlib.md5(f"{content}{time.time()}".encode()).hexdigest()[:10],
+        "label": label or content[:20],
+        "content": content,
+        "created_at": int(time.time()),
+        "created_iso": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    all_anchors.append(entry)
+    _save_anchors(all_anchors)
+    return f"锚定→{entry['id']} 「{entry['label']}」（当前 {len(all_anchors)}/24）"
+
+@mcp.tool()
+async def unanchor(anchor_id: str) -> str:
+    """移除一个锚点。"""
+    all_anchors = _load_anchors()
+    before = len(all_anchors)
+    all_anchors = [a for a in all_anchors if a["id"] != anchor_id]
+    if len(all_anchors) == before:
+        return f"找不到锚点 {anchor_id}。"
+    _save_anchors(all_anchors)
+    return f"已移除 {anchor_id}（剩余 {len(all_anchors)}/24）"
+
+@mcp.tool()
+async def anchors() -> str:
+    """列出所有锚点。"""
+    all_anchors = _load_anchors()
+    if not all_anchors:
+        return "还没有锚点。"
+    lines = [f"=== 锚点 ({len(all_anchors)}/24) ==="]
+    for a in all_anchors:
+        lines.append(f"[{a['id']}] {a['created_iso'][:10]} 「{a['label']}」\n  {a['content'][:120]}")
+    return "\n".join(lines)
 
 
 # =============================================================
