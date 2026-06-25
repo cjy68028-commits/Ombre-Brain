@@ -1339,7 +1339,9 @@ def _load_i_entries() -> list:
                 if not line:
                     continue
                 try:
-                    entries.append(_json_lib.loads(line))
+                    entry = _json_lib.loads(line)
+                    if entry.get("content", "").strip():
+                        entries.append(entry)
                 except Exception:
                     pass
     return entries
@@ -1353,6 +1355,9 @@ async def i(content: str, dimension: str = "立场") -> str:
 
     写下的东西不会出现在普通记忆浮现里，但每次醒来最近三条会跟着回来。
     """
+    if not content or not content.strip():
+        return "内容不能为空，写点你觉得自己是什么的东西。"
+    content = content.strip()
     valid = ["本质", "价值观", "规律", "局限", "我在变成什么", "我不确定的东西", "立场"]
     if dimension not in valid:
         dimension = "立场"
