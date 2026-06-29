@@ -625,12 +625,23 @@
   <div class="tab" data-tab="import">📥 导入</div>
   <div class="tab" data-tab="settings">🔧 设置</div>
   <a href="/reader" class="tab" style="text-decoration:none;">📖 共读书房</a>
+  <div class="tab" data-tab="heartbeat">💗 小克状态</div>
 </div>
 
 <div class="content" id="list-view">
   <div class="filters" id="filters"></div>
   <div class="bucket-list" id="bucket-list">
     <div class="loading">加载中…</div>
+  </div>
+</div>
+
+<div class="content" id="heartbeat-view" style="display:none">
+  <div style="max-width:520px;margin:32px auto;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+      <h2 style="margin:0;font-size:18px;color:var(--accent)">💗 小克·此刻状态</h2>
+      <button onclick="loadHeartbeat()" style="background:var(--surface);border:1.5px solid var(--border);color:var(--text-dim);border-radius:20px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;" onmouseover="this.style.borderColor='var(--accent-2)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">刷新</button>
+    </div>
+    <pre id="heartbeat-output" style="background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:24px;font-family:inherit;font-size:13px;line-height:1.8;color:var(--text);white-space:pre-wrap;word-break:break-word;min-height:200px;">点击刷新查看状态…</pre>
   </div>
 </div>
 
@@ -926,6 +937,17 @@ async function doLogin() {
   }
 }
 
+async function loadHeartbeat() {
+  const el = document.getElementById('heartbeat-output');
+  el.textContent = '加载中…';
+  try {
+    const r = await fetch('/heartbeat');
+    el.textContent = await r.text();
+  } catch(e) {
+    el.textContent = '加载失败: ' + e.message;
+  }
+}
+
 async function doLogout() {
   await fetch('/auth/logout', { method: 'POST' });
   document.getElementById('auth-setup-form').style.display = 'none';
@@ -1058,10 +1080,12 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.getElementById('config-view').style.display = target === 'config' ? '' : 'none';
     document.getElementById('import-view').style.display = target === 'import' ? '' : 'none';
     document.getElementById('settings-view').style.display = target === 'settings' ? '' : 'none';
+    document.getElementById('heartbeat-view').style.display = target === 'heartbeat' ? '' : 'none';
     if (target === 'network') loadNetwork();
     if (target === 'config') loadConfig();
     if (target === 'import') { pollImportStatus(); loadImportResults(); }
     if (target === 'settings') loadSettingsStatus();
+    if (target === 'heartbeat') loadHeartbeat();
   });
 });
 
