@@ -966,20 +966,30 @@ async def hold(
     importance = max(1, min(10, importance))
     extra_tags = [t.strip() for t in tags.split(",") if t.strip()]
 
-    # --- Feel mode: store as feel type, minimal metadata ---
-    # --- Feel 模式：存为 feel 类型，最少元数据 ---
+    # --- Feel mode: store as feel type, auto-tag for searchability ---
+    # --- Feel 模式：存为 feel 类型，自动打标以确保可检索 ---
     if feel:
-        # Feel valence/arousal = model's own perspective
-        feel_valence = valence if 0 <= valence <= 1 else 0.5
-        feel_arousal = arousal if 0 <= arousal <= 1 else 0.3
+        try:
+            feel_analysis = await dehydrator.analyze(content)
+        except Exception as e:
+            logger.warning(f"Feel auto-tagging failed / feel 自动打标失败: {e}")
+            feel_analysis = {
+                "domain": [], "valence": 0.5, "arousal": 0.3,
+                "tags": [], "suggested_name": "",
+            }
+        feel_valence = valence if 0 <= valence <= 1 else feel_analysis.get("valence", 0.5)
+        feel_arousal = arousal if 0 <= arousal <= 1 else feel_analysis.get("arousal", 0.3)
+        feel_tags = list(dict.fromkeys(feel_analysis.get("tags", []) + extra_tags))
+        feel_domain = feel_analysis.get("domain", [])
+        feel_name = feel_analysis.get("suggested_name", "")
         bucket_id = await bucket_mgr.create(
             content=content,
-            tags=[],
+            tags=feel_tags,
             importance=5,
-            domain=[],
+            domain=feel_domain,
             valence=feel_valence,
             arousal=feel_arousal,
-            name=None,
+            name=feel_name or None,
             bucket_type="feel",
         )
         try:
